@@ -7,7 +7,8 @@ os.system("pip install mistralai")
 from mistralai.client import MistralClient
 
 os.system("pip install mistralai")
-from mistralai.chat_completion import ChatMessage
+from mistralai.models import ChatMessage
+
 
 
 os.system("pip install beautifulsoup4")
