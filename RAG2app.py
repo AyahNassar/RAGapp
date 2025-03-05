@@ -5,6 +5,9 @@ import os
 from mistralai.client import MistralClient
 from mistralai.models.chat_completion import ChatMessage
 
+os.system("pip install beautifulsoup4")
+
+
 # Load Mistral API Key
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "t0wNrTSvDhVXjkljdyjO0i00ckjcGoSY")
 client = MistralClient(api_key=MISTRAL_API_KEY)
