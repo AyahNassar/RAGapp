@@ -1,11 +1,12 @@
 import streamlit as st
 import requests
-from bs4 import BeautifulSoup
+
 import os
 from mistralai.client import MistralClient
 from mistralai.models.chat_completion import ChatMessage
 
 os.system("pip install beautifulsoup4")
+from bs4 import BeautifulSoup
 
 
 # Load Mistral API Key
