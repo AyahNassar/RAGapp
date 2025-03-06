@@ -52,8 +52,8 @@ def ask_mistral(query, policy_text):
         {"role": "user", "content": f"Here is the policy text:\n{policy_text}\n\nQuestion: {query}\nAnswer in a clear and concise manner."},
     ]
     
-    response = mistral.chat(model="mistral-tiny", messages=messages)
-    return response["choices"][0]["message"]["content"] if response.get("choices") else "No relevant information found."
+    response = mistral.chat_completions.create(model="mistral-tiny", messages=messages)
+    return response.choices[0].message.content if response.choices else "No relevant information found."
 
 # Streamlit UI
 st.title("UDST Policy Chatbot")
