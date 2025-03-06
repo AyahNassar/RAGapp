@@ -1,5 +1,5 @@
 streamlit
 requests
 beautifulsoup4
-mistralai==0.0.8
+mistralai
 
