@@ -1,12 +1,14 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-import os
-from mistralai import Mistral  # Using only Mistral from mistralai
+import numpy as np
+from mistralai import Mistral
 
 # Load Mistral API Key
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-mistral = Mistral(api_key=MISTRAL_API_KEY)
+
+# Initialize Mistral client
+client = Mistral(api_key=MISTRAL_API_KEY)
 
 # List of policy URLs
 policy_urls = {
@@ -22,51 +24,71 @@ policy_urls = {
     "Graduation Policy": "http://udst.edu.qa/about-udst/institutional-excellence-ie/udst-policies-and-procedures/graduation-policy",
 }
 
-@st.cache_data
-def scrape_policy(url):
-    """Fetches policy content from the given URL."""
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        paragraphs = [
-            p.get_text().strip() for p in soup.find_all("p") if p.get_text().strip()
-        ]
-        return (
-            "\n".join(paragraphs)
-            if paragraphs
-            else "Policy content could not be retrieved."
-        )
-    except requests.RequestException:
-        return "Policy content could not be retrieved."
+# Function to fetch policy text
+def fetch_policies(url):
+    response = requests.get(url)
+    html_doc = response.text
+    soup = BeautifulSoup(html_doc, "html.parser")
+    paragraphs = [p.get_text().strip() for p in soup.find_all("p") if p.get_text().strip()]
+    return "\n".join(paragraphs) if paragraphs else "Policy content could not be retrieved."
 
-@st.cache_data
-def get_policy_text(policy_name):
-    """Gets the full policy text as a string."""
-    return scrape_policy(policy_urls[policy_name])
+# Function to chunk text
+def chunk_text(text, chunk_size=512):
+    return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
 
-def ask_mistral(query, policy_text):
-    """Uses Mistral AI to generate a response based on the policy content."""
-    messages = [
-        {"role": "system", "content": "You are a helpful AI assistant answering questions based on university policies."},
-        {"role": "user", "content": f"Here is the policy text:\n{policy_text}\n\nQuestion: {query}\nAnswer in a clear and concise manner."},
-    ]
+# Function to get text embeddings from Mistral
+def get_text_embedding(list_txt_chunks):
+    embeddings_batch_response = client.embeddings.create(model="mistral-embed", inputs=list_txt_chunks)
+    return embeddings_batch_response.data
+
+# Initialize FAISS for similarity search
+def initialize_faiss(embeddings):
+    d = len(embeddings[0].embedding)
+    import faiss
+    index = faiss.IndexFlatL2(d)
+    index.add(np.array([embedding.embedding for embedding in embeddings]))
+    return index
+
+# Function to handle user queries
+def handle_query(query, chunks, index):
+    question_embeddings = np.array([get_text_embedding([query])[0].embedding])
+    D, I = index.search(question_embeddings, k=2)
+    retrieved_chunk = [chunks[i] for i in I[0]]
+    prompt = f"""
+    Context information is below.
+    ---------------------
+    {retrieved_chunk}
+    ---------------------
+    Given the context information and not prior knowledge, answer the query.
+    Query: {query}
+    Answer:
+    """
+    response = mistral_generate(prompt)
+    return response
+
+# Function to interact with Mistral for generating answers
+def mistral_generate(user_message, model="mistral-large-latest"):
+    chat_response = client.chat.complete(
+        model=model,
+        messages=[{"role": "user", "content": user_message}],
+    )
+    return chat_response.choices[0].message.content
+
+# Streamlit UI Setup
+def main():
+    st.title("UDST Policies Chatbot")
+    selected_policy = st.selectbox("Select a Policy", list(policy_urls.keys()))
     
-    response = mistral.chat_completions.create(model="mistral-tiny", messages=messages)
-    return response.choices[0].message.content if response.choices else "No relevant information found."
+    url = policy_urls[selected_policy]
+    policies_text = fetch_policies(url)
+    chunks = chunk_text(policies_text)
+    text_embeddings = get_text_embedding(chunks)
+    index = initialize_faiss(text_embeddings)
 
-# Streamlit UI
-st.title("UDST Policy Chatbot")
-st.write("Select a policy and ask questions!")
+    user_query = st.text_input("Enter your query:")
+    if user_query:
+        answer = handle_query(user_query, chunks, index)
+        st.text_area("Answer", value=answer, height=300)
 
-selected_policy = st.selectbox("Choose a policy:", list(policy_urls.keys()))
-user_query = st.text_input("Enter your query:")
-
-if st.button("Ask"):
-    if user_query.strip():
-        policy_text = get_policy_text(selected_policy)
-        answer = ask_mistral(user_query, policy_text)
-        st.subheader("Answer:")
-        st.write(answer)
-    else:
-        st.warning("Please enter a query.")
+if __name__ == "__main__":
+    main()
