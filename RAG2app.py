@@ -4,43 +4,29 @@ from bs4 import BeautifulSoup
 import numpy as np
 from mistralai import Mistral
 
-# Define API key directly
+# Define API key for Mistral API
 api_key = "t0wNrTSvDhVXjkljdyjO0i00ckjcGoSY" 
 
-# Initialize Mistral client
-client = Mistral(api_key=api_key)
+# Function to get text embeddings from Mistral
+def get_text_embedding(list_txt_chunks):
+    client = Mistral(api_key=api_key)
+    embeddings_batch_response = client.embeddings.create(model="mistral-embed", inputs=list_txt_chunks)
+    return embeddings_batch_response.data
 
-# List of policy URLs
-policy_urls = {
-    "Student Attendance Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/student-attendance-policy",
-    "Student Appeals Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/student-appeals-policy",
-    "Transfer Policy": "http://udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/transfer-policy",
-    "Graduate Final Grade Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/graduate-final-grade-policy",
-   
-    "Examination Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/examination-policy",
-    "Final Grade Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/final-grade-policy",
-
-    "Graduation Policy": "http://udst.edu.qa/about-udst/institutional-excellence-ie/udst-policies-and-procedures/graduation-policy",
-}
-
-# Function to fetch policy text
+# Fetching and parsing the UDST policies page based on the policy URL
 def fetch_policies(url):
     response = requests.get(url)
     html_doc = response.text
     soup = BeautifulSoup(html_doc, "html.parser")
-    paragraphs = [p.get_text().strip() for p in soup.find_all("p") if p.get_text().strip()]
-    return "\n".join(paragraphs) if paragraphs else "Policy content could not be retrieved."
+    policies_text = soup.find("div").text  # Example to fetch policy text
+    return policies_text
 
-# Function to chunk text
+# Chunking the policies text into smaller chunks for processing
 def chunk_text(text, chunk_size=512):
-    return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+    chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+    return chunks
 
-# Function to get text embeddings from Mistral
-def get_text_embedding(list_txt_chunks):
-    embeddings_batch_response = client.embeddings.create(model="mistral-embed", inputs=list_txt_chunks)
-    return embeddings_batch_response.data
-
-# Initialize FAISS for similarity search
+# Initialize the FAISS index for similarity search
 def initialize_faiss(embeddings):
     d = len(embeddings[0].embedding)
     import faiss
@@ -51,7 +37,7 @@ def initialize_faiss(embeddings):
 # Function to handle user queries
 def handle_query(query, chunks, index):
     question_embeddings = np.array([get_text_embedding([query])[0].embedding])
-    D, I = index.search(question_embeddings, k=2)
+    D, I = index.search(question_embeddings, k=2)  # Searching for top 2 similar chunks
     retrieved_chunk = [chunks[i] for i in I[0]]
     prompt = f"""
     Context information is below.
@@ -62,29 +48,55 @@ def handle_query(query, chunks, index):
     Query: {query}
     Answer:
     """
-    response = mistral_generate(prompt)
+    response = mistral(prompt)
     return response
 
 # Function to interact with Mistral for generating answers
-def mistral_generate(user_message, model="mistral-large-latest"):
+def mistral(user_message, model="mistral-large-latest"):
+    client = Mistral(api_key=api_key)
     chat_response = client.chat.complete(
         model=model,
-        messages=[{"role": "user", "content": user_message}],
+        messages=[
+            {
+                "role": "user",
+                "content": user_message,
+            },
+        ]
     )
     return chat_response.choices[0].message.content
 
 # Streamlit UI Setup
 def main():
     st.title("UDST Policies Chatbot")
-    selected_policy = st.selectbox("Select a Policy", list(policy_urls.keys()))
+
+    # Define the policy links
+    policy_links = {
+        "Student Attendance Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/student-attendance-policy",
+    "Student Appeals Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/student-appeals-policy",
+    "Transfer Policy": "http://udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/transfer-policy",
+    "Graduate Final Grade Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/graduate-final-grade-policy",
+    "Library Space Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/use-library-space-policy",
+    "Academic Integrity Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/academic-integrity-policy",
+    "Examination Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/examination-policy",
+    "Final Grade Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/final-grade-policy",
+    "Registration Policy": "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures/registration-policy",
+    "Graduation Policy": "http://udst.edu.qa/about-udst/institutional-excellence-ie/udst-policies-and-procedures/graduation-policy"
+    }
+
+    # Listbox for policy selection
+    selected_policy = st.selectbox("Select a Policy", list(policy_links.keys()))
     
-    url = policy_urls[selected_policy]
+    # Fetch and chunk the selected policy text
+    url = policy_links[selected_policy]
     policies_text = fetch_policies(url)
     chunks = chunk_text(policies_text)
     text_embeddings = get_text_embedding(chunks)
     index = initialize_faiss(text_embeddings)
 
+    # Text box for entering the query
     user_query = st.text_input("Enter your query:")
+
+    # Text area to display the response
     if user_query:
         answer = handle_query(user_query, chunks, index)
         st.text_area("Answer", value=answer, height=300)
