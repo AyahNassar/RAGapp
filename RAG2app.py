@@ -4,11 +4,11 @@ from bs4 import BeautifulSoup
 import numpy as np
 from mistralai import Mistral
 
-# Load Mistral API Key
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+# Define API key directly
+api_key = "t0wNrTSvDhVXjkljdyjO0i00ckjcGoSY" 
 
 # Initialize Mistral client
-client = Mistral(api_key=MISTRAL_API_KEY)
+client = Mistral(api_key=api_key)
 
 # List of policy URLs
 policy_urls = {
